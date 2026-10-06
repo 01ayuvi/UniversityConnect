@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Environment files (secrets) - commit .env.example instead
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+
+# Archives
+*.zip
