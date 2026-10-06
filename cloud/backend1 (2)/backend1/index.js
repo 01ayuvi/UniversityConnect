@@ -97,6 +97,11 @@ async function comparePassword(plainPassword, hashedPassword) {
   }
 }
 
+// Helper: Form fields left blank arrive as "" - treat them as missing
+function blankToNull(value) {
+  return value === '' || value === undefined ? null : value;
+}
+
 // Helper: Format user data consistently
 function formatUserData(user, userType) {
   const baseData = {
@@ -141,13 +146,13 @@ app.post("/api/auth/signup", async (req, res) => {
     lastName,
     password,
     phoneNumber = '',
-    gender = '',
-    userType = 'employee'
+    gender = ''
   } = req.body;
+  // Public signup always creates an employee; any userType in the request is ignored.
+  // Admins can only be created by an existing admin through POST /api/users.
 
   // Form fields left blank arrive as "" - treat them as missing.
   // The signup form sends "jobRole", so accept it as "role".
-  const blankToNull = (value) => (value === '' || value === undefined ? null : value);
   const age = blankToNull(req.body.age);
   const department = blankToNull(req.body.department) ?? 'General';
   const role = blankToNull(req.body.role) ?? blankToNull(req.body.jobRole) ?? 'New Employee';
@@ -189,49 +194,23 @@ app.post("/api/auth/signup", async (req, res) => {
     // Hash the password
     const hashedPassword = await hashPassword(password);
 
-    let result;
-    let newUser;
-
-    // Insert into appropriate table based on userType
-    if (userType === 'admin') {
-      result = await pool.query(
-        `INSERT INTO admins (username, first_name, last_name, email_id, phone_number, password, gender, age, profile_pic_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING admin_id as id, username, first_name, last_name, email_id, phone_number, gender, age, profile_pic_url`,
-        [
-          username,
-          firstName,
-          lastName,
-          email,
-          phoneNumber,
-          hashedPassword,
-          gender,
-          age,
-          `https://picsum.photos/seed/${username}/100`
-        ]
-      );
-      newUser = formatUserData(result.rows[0], 'admin');
-    } else {
-      result = await pool.query(
-        `INSERT INTO employees (username, first_name, last_name, email_id, phone_number, password, gender, age, department, role, profile_pic_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         RETURNING employee_id as id, username, first_name, last_name, email_id, phone_number, gender, age, department, role, profile_pic_url`,
-        [
-          username,
-          firstName,
-          lastName,
-          email,
-          phoneNumber,
-          hashedPassword,
-          gender,
-          age,
-          department,
-          role,
-          `https://picsum.photos/seed/${username}/100`
-        ]
-      );
-      newUser = formatUserData(result.rows[0], 'employee');
-    }
+    await pool.query(
+      `INSERT INTO employees (username, first_name, last_name, email_id, phone_number, password, gender, age, department, role, profile_pic_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        username,
+        firstName,
+        lastName,
+        email,
+        phoneNumber,
+        hashedPassword,
+        gender,
+        age,
+        department,
+        role,
+        `https://picsum.photos/seed/${username}/100`
+      ]
+    );
 
     console.log("✅ Signup successful for:", email);
 
@@ -838,13 +817,15 @@ app.post("/api/users", authenticateToken, requireAdmin, async (req, res) => {
       firstName, 
       lastName, 
       password, 
-      phoneNumber = '', 
-      gender = '', 
-      age = null,
-      department = 'General',
-      role = 'New Employee',
-      userType = 'employee' 
+      phoneNumber = '',
+      gender = '',
+      userType = 'employee'
     } = req.body;
+
+    // Treat blank fields as missing (age "" would break the INTEGER column)
+    const age = blankToNull(req.body.age);
+    const department = blankToNull(req.body.department) ?? 'General';
+    const role = blankToNull(req.body.role) ?? 'New Employee';
 
     // Validation
     if (!email || !username || !firstName || !lastName || !password) {
