@@ -20,9 +20,11 @@ app.use(
 );
 
 // PostgreSQL connection
+// Cloud databases (Neon etc.) need SSL; a database on the same machine does not.
+const isLocalDb = /@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL || "");
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: isLocalDb ? false : { rejectUnauthorized: false },
 });
 
 // Verify DB connection
@@ -132,20 +134,24 @@ app.get("/", (req, res) => {
 
 // Signup Route
 app.post("/api/auth/signup", async (req, res) => {
-  const { 
-    email, 
-    username, 
-    firstName, 
-    lastName, 
-    password, 
-    phoneNumber = '', 
-    gender = '', 
-    age = null,
-    department = 'General',
-    role = 'New Employee',
-    userType = 'employee' 
+  const {
+    email,
+    username,
+    firstName,
+    lastName,
+    password,
+    phoneNumber = '',
+    gender = '',
+    userType = 'employee'
   } = req.body;
-  
+
+  // Form fields left blank arrive as "" - treat them as missing.
+  // The signup form sends "jobRole", so accept it as "role".
+  const blankToNull = (value) => (value === '' || value === undefined ? null : value);
+  const age = blankToNull(req.body.age);
+  const department = blankToNull(req.body.department) ?? 'General';
+  const role = blankToNull(req.body.role) ?? blankToNull(req.body.jobRole) ?? 'New Employee';
+
   console.log("📝 Signup attempt for:", email);
 
   // Validation
@@ -580,10 +586,11 @@ app.get("/api/users", authenticateToken, requireAdmin, async (req, res) => {
         LIMIT $1 OFFSET $2
       `;
     } else {
+      // Both halves of a UNION must have the same columns, so admins get NULL department/role
       query = `
-        SELECT admin_id as id, username, first_name, last_name, email_id, phone_number, 
-               gender, age, profile_pic_url, 'admin' as user_type
-        FROM admins 
+        SELECT admin_id as id, username, first_name, last_name, email_id, phone_number,
+               gender, age, NULL as department, NULL as role, profile_pic_url, 'admin' as user_type
+        FROM admins
         WHERE 1=1 ${whereClause}
         UNION ALL
         SELECT employee_id as id, username, first_name, last_name, email_id, phone_number, 

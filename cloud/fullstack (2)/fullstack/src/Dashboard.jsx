@@ -370,8 +370,9 @@ export default function Dashboard({ user, onLogout }) {
   // Fetch dashboard data (for admins)
   const fetchDashboardData = async () => {
     try {
-      const response = await makeAuthenticatedRequest("/api/dashboard");
-      return response.data;
+      // Backend returns { success, stats }
+      const response = await makeAuthenticatedRequest("/api/dashboard/stats");
+      return { stats: response.stats };
     } catch (error) {
       if (error.message.includes("Access denied")) {
         return null;
@@ -832,7 +833,8 @@ const AdminContent = ({ dashboardData, currentUser }) => {
   const fetchAllUsers = async () => {
     try {
       const token = currentUser?.token || window.authToken;
-      const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
+      // Backend returns { data, pagination } and defaults to 10 per page, so ask for all users
+      const response = await fetch(`${API_BASE_URL}/api/users?limit=1000`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -840,7 +842,7 @@ const AdminContent = ({ dashboardData, currentUser }) => {
       });
       const data = await response.json();
       if (response.ok) {
-        setUsers(data.users || []);
+        setUsers(data.data || []);
       }
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -894,7 +896,7 @@ const AdminContent = ({ dashboardData, currentUser }) => {
               <div style={styles.tableCell}>Actions</div>
             </div>
             {users.map((user) => (
-              <div key={user.id} style={styles.tableRow}>
+              <div key={`${user.user_type}-${user.id}`} style={styles.tableRow}>
                 <div style={styles.tableCell}>
                   <div style={styles.userCell}>
                     <img 
